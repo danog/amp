@@ -60,6 +60,8 @@ function now(): float
  * @param float $timeout Number of seconds to wait.
  * @param bool $reference If false, unreference the underlying watcher.
  * @param Cancellation|null $cancellation Cancel waiting if cancellation is requested.
+ *
+ * @psalm-capabilities io
  */
 function delay(float $timeout, bool $reference = true, ?Cancellation $cancellation = null): void
 {
