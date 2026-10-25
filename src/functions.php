@@ -169,23 +169,16 @@ function weakClosure(\Closure $closure): \Closure
 
     $methodName = $reflection->getShortName();
     if (!\str_starts_with($methodName, '{closure')) {
-        // First-class callable or \Closure::fromCallable(). Reflection invokes the method, including a
-        // private one, in its declaring scope. An unbound `$this` here is not in a class, which Psalm rejects.
-        $method = new \ReflectionMethod($scope->name ?? $that::class, $methodName);
-
-        /** @var TClosure */
-        return static function (mixed ...$args) use ($reference, $method): mixed {
-            $that = $reference->get();
-            if (!$that) {
-                throw new \Error('Weakened closure invoked after referenced object destroyed');
-            }
-
-            return $method->getClosure($that)(...$args);
-        };
+        // Closure from first-class callable or \Closure::fromCallable(), declare an anonymous closure to rebind.
+        /** @psalm-suppress InvalidScope Closure is bound before being invoked. */
+        $closure = fn (mixed ...$args): mixed => $this->{$methodName}(...$args);
+        if ($useBindTo && $scope) {
+            $closure = $closure->bindTo(null, $scope->name);
+        }
+    } else {
+        // Rebind to remove reference to $that
+        $closure = $closure->bindTo($reference);
     }
-
-    // Rebind to remove reference to $that
-    $closure = $closure->bindTo($reference);
 
     if (!$closure) {
         throw new \RuntimeException('Unable to rebind closure scoped to ' . ($scope?->name ?? $that::class));
