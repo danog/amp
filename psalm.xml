@@ -12,6 +12,6 @@
     </projectFiles>
 
     <stubs>
-        <file name="stubs/RevoltEventLoop.phpstub" />
+        <file name="vendor/revolt/event-loop/stubs/EventLoop.phpstub" />
     </stubs>
 </psalm>
