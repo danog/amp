@@ -2,13 +2,12 @@
 
 namespace Amp;
 
-use Amp\Internal\CompositeCancellationState;
 use Revolt\EventLoop;
 
 /**
  * A cancellation that is requested when any of the given cancellations is requested.
  *
- * @implements Cancellation[read-props|write-props|io]
+ * @implements Cancellation[read-props|write-this-props|write-refs|io]
  *
  * @api
  */
@@ -17,87 +16,106 @@ final class CompositeCancellation implements Cancellation
     use ForbidCloning;
     use ForbidSerialization;
 
-    private readonly CompositeCancellationState $state;
+    /** @var array<int, array{Cancellation, string}> */
+    private array $cancellations = [];
+
+    private string $nextId = 'a';
+
+    /** @var array<string, \Closure(CancelledException): void> */
+    private array $callbacks = [];
+
+    private ?CancelledException $exception = null;
 
     public function __construct(Cancellation ...$cancellations)
     {
-        // The callback keeps this state object, not the cancellation, so destroying the cancellation can
-        // unsubscribe and break the cycle between the state and the child cancellations.
-        $state = new CompositeCancellationState();
-        $this->state = $state;
+        // The callback shares these properties by reference and does not retain this object, so
+        // destroying the cancellation unsubscribes while a child still holds the callback.
+        $subscribed = [];
+        $callbacks = [];
+        $currentException = null;
 
-        $onCancel = static function (CancelledException $exception) use ($state): void {
-            if ($state->exception) {
+        $this->cancellations = &$subscribed;
+        $this->callbacks = &$callbacks;
+        $this->exception = &$currentException;
+
+        $onCancel = static function (CancelledException $exception) use (
+            &$subscribed,
+            &$callbacks,
+            &$currentException,
+        ): void {
+            if ($currentException) {
                 return;
             }
 
-            $state->exception = $exception;
+            $currentException = $exception;
 
-            foreach ($state->cancellations as [$cancellation, $id]) {
+            foreach ($subscribed as [$cancellation, $id]) {
                 $cancellation->unsubscribe($id);
             }
 
-            $state->cancellations = [];
+            $subscribed = [];
 
-            foreach ($state->callbacks as $callback) {
+            foreach ($callbacks as $callback) {
                 EventLoop::queue($callback, $exception);
             }
 
-            $state->callbacks = [];
+            $callbacks = [];
         };
 
         foreach ($cancellations as $cancellation) {
             $id = $cancellation->subscribe($onCancel);
-            $state->cancellations[] = [$cancellation, $id];
+            $this->cancellations[] = [$cancellation, $id];
         }
     }
 
     public function __destruct()
     {
-        foreach ($this->state->cancellations as [$cancellation, $id]) {
+        foreach ($this->cancellations as [$cancellation, $id]) {
             $cancellation->unsubscribe($id);
         }
 
-        $this->state->cancellations = [];
+        // The reference created in the constructor causes this property to persist beyond the life of this object,
+        // so explicitly removing references will speed up garbage collection.
+        $this->cancellations = [];
     }
 
     /**
-     * @psalm-capabilities read-props|write-props|io
+     * @psalm-capabilities read-props|write-this-props|write-refs|io
      */
     #[\Override]
     public function subscribe(\Closure $callback): string
     {
-        $id = $this->state->nextId;
-        $this->state->nextId = \str_increment($this->state->nextId);
+        $id = $this->nextId;
+        $this->nextId = \str_increment($this->nextId);
 
-        if ($this->state->exception) {
-            EventLoop::queue($callback, $this->state->exception);
+        if ($this->exception) {
+            EventLoop::queue($callback, $this->exception);
         } else {
-            $this->state->callbacks[$id] = $callback;
+            $this->callbacks[$id] = $callback;
         }
 
         return $id;
     }
 
     /**
-     * @psalm-capabilities read-props|write-props
+     * @psalm-capabilities read-props|write-this-props|write-refs
      */
     #[\Override]
     public function unsubscribe(string $id): void
     {
-        unset($this->state->callbacks[$id]);
+        unset($this->callbacks[$id]);
     }
 
     /** @psalm-capabilities read-props */
     #[\Override]
     public function isRequested(): bool
     {
-        if ($this->state->exception) {
+        if ($this->exception) {
             return true;
         }
 
         // Check each cancellation directly, as the callback setting the exception is invoked asynchronously.
-        foreach ($this->state->cancellations as [$cancellation]) {
+        foreach ($this->cancellations as [$cancellation]) {
             if ($cancellation->isRequested()) {
                 return true;
             }
@@ -106,16 +124,16 @@ final class CompositeCancellation implements Cancellation
         return false;
     }
 
-    /** @psalm-capabilities read-props|write-props */
+    /** @psalm-capabilities read-props|write-props|write-refs */
     #[\Override]
     public function throwIfRequested(): void
     {
-        if ($this->state->exception) {
-            throw $this->state->exception;
+        if ($this->exception) {
+            throw $this->exception;
         }
 
         // Check each cancellation directly, as the callback setting the exception is invoked asynchronously.
-        foreach ($this->state->cancellations as [$cancellation]) {
+        foreach ($this->cancellations as [$cancellation]) {
             $cancellation->throwIfRequested();
         }
     }
