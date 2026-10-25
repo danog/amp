@@ -68,7 +68,7 @@ final class CompositeCancellation implements Cancellation
     public function subscribe(\Closure $callback): string
     {
         $id = $this->state->nextId;
-        $this->state->nextId = Internal\incrementId($id);
+        $this->state->nextId = \str_increment($this->state->nextId);
 
         if ($this->state->exception) {
             EventLoop::queue($callback, $this->state->exception);

@@ -68,7 +68,7 @@ final class Cancellable implements Cancellation
     public function subscribe(\Closure $callback): string
     {
         $id = $this->nextId;
-        $this->nextId = incrementId($id);
+        $this->nextId = \str_increment($this->nextId);
 
         if ($this->requested) {
             $exception = $this->getException();

@@ -80,7 +80,7 @@ final class FutureState
     public function subscribe(\Closure $callback): string
     {
         $id = self::$nextId;
-        self::$nextId = incrementId($id);
+        self::$nextId = \str_increment(self::$nextId);
 
         $this->handled = true; // Even if unsubscribed later, consider the future handled.
 

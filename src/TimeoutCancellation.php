@@ -28,7 +28,7 @@ final class TimeoutCancellation implements Cancellation
     {
         $this->cancellation = $source = new Internal\Cancellable();
 
-        $trace = Internal\captureDebugTrace();
+        $trace = \ini_get('zend.assertions') === '1' ? \debug_backtrace(\DEBUG_BACKTRACE_IGNORE_ARGS) : null;
 
         $this->callbackId = EventLoop::delay($timeout, static function () use ($trace, $source, $message): void {
             if ($trace !== null) {

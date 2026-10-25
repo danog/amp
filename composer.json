@@ -34,7 +34,8 @@
     ],
     "require": {
         "php": ">=8.1",
-        "revolt/event-loop": "^1 || ^0.2"
+        "revolt/event-loop": "^1 || ^0.2",
+        "symfony/polyfill-php83": "^1.43"
     },
     "require-dev": {
         "amphp/php-cs-fixer-config": "^2",
