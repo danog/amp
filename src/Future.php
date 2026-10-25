@@ -38,7 +38,9 @@ final class Future
             foreach ($futures as $key => $future) {
                 /** @var object $unchecked */
                 $unchecked = $future;
-                self::assertFuture($unchecked, 'Array must only contain instances of ' . self::class);
+                if (!$unchecked instanceof self) {
+                    throw new \TypeError('Array must only contain instances of ' . self::class);
+                }
                 $iterator->enqueue($future->state, $key, $future);
             }
             $iterator->complete();
@@ -61,7 +63,9 @@ final class Future
                     foreach ($futures as $key => $future) {
                         /** @var object $unchecked */
                         $unchecked = $future;
-                        self::assertFuture($unchecked, 'Iterable must only provide instances of ' . self::class);
+                        if (!$unchecked instanceof self) {
+                            throw new \TypeError('Iterable must only provide instances of ' . self::class);
+                        }
 
                         if (!$enqueue($future, $key)) {
                             return;
@@ -280,18 +284,6 @@ final class Future
             if ($cancellation !== null && $cancellationId !== null) {
                 $cancellation->unsubscribe($cancellationId);
             }
-        }
-    }
-
-    /**
-     * @param mixed $future Value yielded by the iterable passed to {@see self::iterate()}.
-     *
-     * @psalm-pure
-     */
-    private static function assertFuture(mixed $future, string $message): void
-    {
-        if (!$future instanceof self) {
-            throw new \TypeError($message);
         }
     }
 }
