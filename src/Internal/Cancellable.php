@@ -20,7 +20,7 @@ final class Cancellable implements Cancellation
     use ForbidCloning;
     use ForbidSerialization;
 
-    private int $nextId = 0;
+    private string $nextId = 'a';
 
     /** @var \Closure[] */
     private array $callbacks = [];
@@ -67,7 +67,8 @@ final class Cancellable implements Cancellation
     #[\Override]
     public function subscribe(\Closure $callback): string
     {
-        $id = 'a' . $this->nextId++;
+        $id = $this->nextId;
+        $this->nextId = incrementId($id);
 
         if ($this->requested) {
             $exception = $this->getException();

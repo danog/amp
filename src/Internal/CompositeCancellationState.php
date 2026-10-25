@@ -22,7 +22,7 @@ final class CompositeCancellationState
     /** @var array<string, \Closure(CancelledException): void> */
     public array $callbacks = [];
 
-    public int $nextId = 0;
+    public string $nextId = 'a';
 
     public ?CancelledException $exception = null;
 }

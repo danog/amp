@@ -19,7 +19,7 @@ final class FutureState
     use ForbidSerialization;
 
     /** Static so subscription identifiers stay unique across all futures. */
-    private static int $nextId = 0;
+    private static string $nextId = 'a';
 
     private bool $complete = false;
 
@@ -79,7 +79,8 @@ final class FutureState
      */
     public function subscribe(\Closure $callback): string
     {
-        $id = 'a' . self::$nextId++;
+        $id = self::$nextId;
+        self::$nextId = incrementId($id);
 
         $this->handled = true; // Even if unsubscribed later, consider the future handled.
 

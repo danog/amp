@@ -71,6 +71,46 @@ function captureDebugTrace(): ?array
 }
 
 /**
+ * Returns the next alphanumeric id (`a`, `b`, …, `z`, `aa`), the same sequence as `++` on a non-numeric string.
+ *
+ * PHP 8.3 and newer use {@see \str_increment()}. Older versions do not have that function.
+ *
+ * @psalm-pure
+ * @internal
+ */
+function incrementId(string $id): string
+{
+    if (\PHP_VERSION_ID >= 80300) {
+        return \str_increment($id);
+    }
+
+    $characters = \str_split($id);
+    for ($i = \count($characters) - 1; $i >= 0; $i--) {
+        $character = $characters[$i];
+        if ($character === '9' || $character === 'Z' || $character === 'z') {
+            $characters[$i] = match ($character) {
+                '9' => '0',
+                'Z' => 'A',
+                default => 'a',
+            };
+            continue;
+        }
+
+        $characters[$i] = \chr(\ord($character) + 1);
+
+        return \implode('', $characters);
+    }
+
+    $prefix = match ($characters[0] ?? '') {
+        '0' => '1',
+        'A' => 'A',
+        default => 'a',
+    };
+
+    return $prefix . \implode('', $characters);
+}
+
+/**
  * @return bool True if the environment variable AMP_DEBUG is set to a value other than "0", "false", or "off" or
  *      if the constant AMP_DEBUG is defined and set to a truthy value.
  * @internal
