@@ -19,6 +19,8 @@ namespace Amp\Internal;
  *
  * @codeCoverageIgnore
  * @internal
+ *
+ * @psalm-pure
  */
 function formatStacktrace(array $trace): string
 {
@@ -38,14 +40,49 @@ function formatStacktrace(array $trace): string
 }
 
 /**
+ * Captures a debug backtrace when assertions are enabled.
+ *
+ * `assert()` does not evaluate its argument unless zend.assertions is 1, so assigning inside an assertion leaves
+ * the trace unset when assertions are disabled. Capture it directly instead. The frame of this function is removed
+ * so the first frame is the caller, matching a trace taken in the caller.
+ *
+ * @return list<array{
+ *     args?: list<mixed>,
+ *     class?: class-string,
+ *     file?: string,
+ *     function: string,
+ *     line?: int,
+ *     object?: object,
+ *     type?: string,
+ * }>|null
+ *
+ * @internal
+ */
+function captureDebugTrace(): ?array
+{
+    if (\ini_get('zend.assertions') !== '1') {
+        return null;
+    }
+
+    $trace = \debug_backtrace(\DEBUG_BACKTRACE_IGNORE_ARGS);
+    \array_shift($trace);
+
+    return $trace;
+}
+
+/**
  * @return bool True if the environment variable AMP_DEBUG is set to a value other than "0", "false", or "off" or
  *      if the constant AMP_DEBUG is defined and set to a truthy value.
  * @internal
  */
 function isDebugEnabled(): bool
 {
-    /** @psalm-suppress RiskyTruthyFalsyComparison */
-    return match (\getenv("AMP_DEBUG") ?: "0") {
+    $value = \getenv("AMP_DEBUG");
+    if ($value === false || $value === "") {
+        $value = "0";
+    }
+
+    return match ($value) {
         "0", "false", "off" => false,
         default => true,
     } || (\defined("AMP_DEBUG") && \AMP_DEBUG);

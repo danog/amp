@@ -24,13 +24,14 @@ function async(\Closure $closure, mixed ...$args): Future
         $s = $state;
         $c = $closure;
 
-        /* Null function arguments so an exception thrown from the closure does not contain the FutureState object
+        /* Drop the parameters so an exception thrown from the closure does not contain the FutureState object
          * in the stack trace, which would create a circular reference, preventing immediate garbage collection */
-        $state = $closure = null;
+        unset($state, $closure);
 
         try {
-            // Clear $args to allow garbage collection of arguments during fiber execution
-            $s->complete($c(...$args, ...($args = [])));
+            // array_splice() reads and empties $args before the closure runs, so a trace or a
+            // suspended fiber does not keep the arguments alive on this frame.
+            $s->complete($c(...\array_splice($args, 0)));
         } catch (\Throwable $exception) {
             $s->error($exception);
         }
@@ -50,8 +51,7 @@ function async(\Closure $closure, mixed ...$args): Future
  */
 function now(): float
 {
-    /** @psalm-suppress InvalidOperand */
-    return (float) \hrtime(true) / 1_000_000_000;
+    return (float) \hrtime(true) / 1_000_000_000.0;
 }
 
 /**
@@ -62,14 +62,21 @@ function now(): float
  * @param Cancellation|null $cancellation Cancel waiting if cancellation is requested.
  *
  * @psalm-capabilities io
+ * @psalm-purity-template P <= read-props|write-this-props|write-props|write-refs|io
+ * @psalm-param null|Cancellation[P] $cancellation
+ * @psalm-purity-from-template P
  */
 function delay(float $timeout, bool $reference = true, ?Cancellation $cancellation = null): void
 {
     $suspension = EventLoop::getSuspension();
     $callbackId = EventLoop::delay($timeout, static fn () => $suspension->resume());
-    $cancellationId = $cancellation?->subscribe(
-        static fn (CancelledException $exception) => $suspension->throw($exception)
-    );
+
+    $cancellationId = null;
+    if ($cancellation !== null) {
+        $cancellationId = $cancellation->subscribe(
+            static fn (CancelledException $exception) => $suspension->throw($exception)
+        );
+    }
 
     if (!$reference) {
         EventLoop::unreference($callbackId);
@@ -80,8 +87,9 @@ function delay(float $timeout, bool $reference = true, ?Cancellation $cancellati
     } finally {
         EventLoop::cancel($callbackId);
 
-        /** @psalm-suppress PossiblyNullArgument $cancellationId will not be null if $cancellation is not null. */
-        $cancellation?->unsubscribe($cancellationId);
+        if ($cancellation !== null && $cancellationId !== null) {
+            $cancellation->unsubscribe($cancellationId);
+        }
     }
 }
 
@@ -93,13 +101,25 @@ function delay(float $timeout, bool $reference = true, ?Cancellation $cancellati
  * @param Cancellation|null $cancellation Cancel waiting if cancellation is requested.
  *
  * @return int Caught signal number.
+ *
  * @throws UnsupportedFeatureException
+ *
+ * @psalm-capabilities io
+ * @psalm-purity-template P <= read-props|write-this-props|write-props|write-refs|io
+ * @psalm-param null|Cancellation[P] $cancellation
+ * @psalm-purity-from-template P
  */
 function trapSignal(int|array $signals, bool $reference = true, ?Cancellation $cancellation = null): int
 {
     $suspension = EventLoop::getSuspension();
-    $callback = static fn (string $watcher, int $signal) => $suspension->resume($signal);
-    $id = $cancellation?->subscribe(static fn (CancelledException $exception) => $suspension->throw($exception));
+    $callback = static function (string $watcher, int $signal) use ($suspension): void {
+        $suspension->resume($signal);
+    };
+
+    $id = null;
+    if ($cancellation !== null) {
+        $id = $cancellation->subscribe(static fn (CancelledException $exception) => $suspension->throw($exception));
+    }
 
     $callbackIds = [];
 
@@ -121,8 +141,9 @@ function trapSignal(int|array $signals, bool $reference = true, ?Cancellation $c
             EventLoop::cancel($callbackId);
         }
 
-        /** @psalm-suppress PossiblyNullArgument $id will not be null if $cancellation is not null. */
-        $cancellation?->unsubscribe($id);
+        if ($cancellation !== null && $id !== null) {
+            $cancellation->unsubscribe($id);
+        }
     }
 }
 
@@ -155,16 +176,23 @@ function weakClosure(\Closure $closure): \Closure
 
     $methodName = $reflection->getShortName();
     if (!\str_starts_with($methodName, '{closure')) {
-        // Closure from first-class callable or \Closure::fromCallable(), declare an anonymous closure to rebind.
-        /** @psalm-suppress InvalidScope Closure is bound before being invoked. */
-        $closure = fn (mixed ...$args): mixed => $this->{$methodName}(...$args);
-        if ($useBindTo && $scope) {
-            $closure = $closure->bindTo(null, $scope->name);
-        }
-    } else {
-        // Rebind to remove reference to $that
-        $closure = $closure->bindTo($reference);
+        // First-class callable or \Closure::fromCallable(). Reflection invokes the method, including a
+        // private one, in its declaring scope. An unbound `$this` here is not in a class, which Psalm rejects.
+        $method = new \ReflectionMethod($scope->name ?? $that::class, $methodName);
+
+        /** @var TClosure */
+        return static function (mixed ...$args) use ($reference, $method): mixed {
+            $that = $reference->get();
+            if (!$that) {
+                throw new \Error('Weakened closure invoked after referenced object destroyed');
+            }
+
+            return $method->getClosure($that)(...$args);
+        };
     }
+
+    // Rebind to remove reference to $that
+    $closure = $closure->bindTo($reference);
 
     if (!$closure) {
         throw new \RuntimeException('Unable to rebind closure scoped to ' . ($scope?->name ?? $that::class));

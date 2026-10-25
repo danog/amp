@@ -58,7 +58,7 @@ function awaitAny(iterable $futures, ?Cancellation $cancellation = null): mixed
  * @template Tk of array-key
  * @template Tv
  *
- * @param positive-int $count
+ * @param int $count Number of successful results required. Must be greater than 0.
  * @param iterable<Tk, Future<Tv>> $futures
  * @param Cancellation|null $cancellation Optional cancellation.
  *

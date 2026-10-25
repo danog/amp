@@ -18,8 +18,8 @@ final class FutureState
     use ForbidCloning;
     use ForbidSerialization;
 
-    // Static so they can be used as array keys
-    private static string $nextId = 'a';
+    /** Static so subscription identifiers stay unique across all futures. */
+    private static int $nextId = 0;
 
     private bool $complete = false;
 
@@ -52,6 +52,11 @@ final class FutureState
         })());
     }
 
+    /**
+     * Reports an unhandled error to the event loop. The engine calls this.
+     *
+     * @api
+     */
     public function __destruct()
     {
         if ($this->throwable && !$this->handled) {
@@ -69,11 +74,12 @@ final class FutureState
      * the future.
      *
      * @return string Identifier that can be used to cancel interest for this future.
+     *
+     * @psalm-capabilities read-props|write-this-props|read-globals|write-globals|io
      */
     public function subscribe(\Closure $callback): string
     {
-        $id = self::$nextId;
-        \PHP_VERSION_ID >= 80300 ? self::$nextId = \str_increment(self::$nextId) : ++self::$nextId;
+        $id = 'a' . self::$nextId++;
 
         $this->handled = true; // Even if unsubscribed later, consider the future handled.
 
@@ -92,6 +98,8 @@ final class FutureState
      * Cancellations are advisory only. The callback might still be called if it is already queued for execution.
      *
      * @param string $id Identifier returned from subscribe()
+     *
+     * @psalm-capabilities read-props|write-this-props|write-refs
      */
     public function unsubscribe(string $id): void
     {
@@ -134,6 +142,8 @@ final class FutureState
 
     /**
      * @return bool True if the operation has completed.
+     *
+     * @psalm-capabilities read-props
      */
     public function isComplete(): bool
     {
@@ -142,6 +152,8 @@ final class FutureState
 
     /**
      * Suppress the exception thrown to the loop error handler if and operation error is not handled by a callback.
+     *
+     * @psalm-capabilities read-props|write-this-props|write-refs
      */
     public function ignore(): void
     {
