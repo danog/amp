@@ -70,13 +70,9 @@ function delay(float $timeout, bool $reference = true, ?Cancellation $cancellati
 {
     $suspension = EventLoop::getSuspension();
     $callbackId = EventLoop::delay($timeout, static fn () => $suspension->resume());
-
-    $cancellationId = null;
-    if ($cancellation !== null) {
-        $cancellationId = $cancellation->subscribe(
-            static fn (CancelledException $exception) => $suspension->throw($exception)
-        );
-    }
+    $cancellationId = $cancellation?->subscribe(
+        static fn (CancelledException $exception) => $suspension->throw($exception)
+    );
 
     if (!$reference) {
         EventLoop::unreference($callbackId);
@@ -116,10 +112,7 @@ function trapSignal(int|array $signals, bool $reference = true, ?Cancellation $c
         $suspension->resume($signal);
     };
 
-    $id = null;
-    if ($cancellation !== null) {
-        $id = $cancellation->subscribe(static fn (CancelledException $exception) => $suspension->throw($exception));
-    }
+    $id = $cancellation?->subscribe(static fn (CancelledException $exception) => $suspension->throw($exception));
 
     $callbackIds = [];
 
